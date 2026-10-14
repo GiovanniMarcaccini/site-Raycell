@@ -117,11 +117,19 @@ export const MOMENTS: Moment[] = [
   },
 ];
 
-// Tangentes da interpolação cúbica monotônica (Fritsch–Carlson)
-const PACING_TANGENTS = (() => {
-  const n = PACING.length;
-  const delta = PACING.slice(0, -1).map(([t0, f0], i) => (PACING[i + 1][1] - f0) / (PACING[i + 1][0] - t0));
-  const m = PACING.map((_, i) => (i === 0 ? delta[0] : i === n - 1 ? delta[n - 2] : (delta[i - 1] + delta[i]) / 2));
+export type Pacing = {
+  frameAtTime: (t: number) => number;
+  timeAtFrame: (frame: number) => number;
+};
+
+/**
+ * Curva tempo → frame a partir dos pontos de PACING, com interpolação cúbica
+ * monotônica (Fritsch–Carlson).
+ */
+export function createPacing(points: [number, number][]): Pacing {
+  const n = points.length;
+  const delta = points.slice(0, -1).map(([t0, f0], i) => (points[i + 1][1] - f0) / (points[i + 1][0] - t0));
+  const m = points.map((_, i) => (i === 0 ? delta[0] : i === n - 1 ? delta[n - 2] : (delta[i - 1] + delta[i]) / 2));
   for (let i = 0; i < n - 1; i++) {
     if (delta[i] === 0) {
       m[i] = m[i + 1] = 0;
@@ -136,41 +144,44 @@ const PACING_TANGENTS = (() => {
       m[i + 1] = k * b * delta[i];
     }
   }
-  return m;
-})();
 
-/** Converte o tempo normalizado em frame original (0–239), contínuo. */
-export function frameAtTime(t: number): number {
-  const last = PACING[PACING.length - 1];
-  if (t <= 0) return 0;
-  if (t >= last[0]) return last[1];
-  let i = 0;
-  while (t > PACING[i + 1][0]) i++;
-  const [t0, f0] = PACING[i];
-  const [t1, f1] = PACING[i + 1];
-  const h = t1 - t0;
-  const s = (t - t0) / h;
-  const s2 = s * s;
-  const s3 = s2 * s;
-  return (
-    (2 * s3 - 3 * s2 + 1) * f0 +
-    (s3 - 2 * s2 + s) * h * PACING_TANGENTS[i] +
-    (-2 * s3 + 3 * s2) * f1 +
-    (s3 - s2) * h * PACING_TANGENTS[i + 1]
-  );
-}
-
-/** Inverso de frameAtTime (busca binária) — sincroniza efeitos a um frame. */
-export function timeAtFrame(frame: number): number {
-  let lo = 0;
-  let hi = PACING[PACING.length - 1][0];
-  for (let k = 0; k < 30; k++) {
-    const mid = (lo + hi) / 2;
-    if (frameAtTime(mid) < frame) lo = mid;
-    else hi = mid;
+  /** Converte o tempo normalizado em frame original (0–239), contínuo. */
+  function frameAtTime(t: number): number {
+    const last = points[n - 1];
+    if (t <= 0) return 0;
+    if (t >= last[0]) return last[1];
+    let i = 0;
+    while (t > points[i + 1][0]) i++;
+    const [t0, f0] = points[i];
+    const [t1, f1] = points[i + 1];
+    const h = t1 - t0;
+    const s = (t - t0) / h;
+    const s2 = s * s;
+    const s3 = s2 * s;
+    return (
+      (2 * s3 - 3 * s2 + 1) * f0 +
+      (s3 - 2 * s2 + s) * h * m[i] +
+      (-2 * s3 + 3 * s2) * f1 +
+      (s3 - s2) * h * m[i + 1]
+    );
   }
-  return hi;
+
+  /** Inverso de frameAtTime (busca binária) — sincroniza efeitos a um frame. */
+  function timeAtFrame(frame: number): number {
+    let lo = 0;
+    let hi = points[n - 1][0];
+    for (let k = 0; k < 30; k++) {
+      const mid = (lo + hi) / 2;
+      if (frameAtTime(mid) < frame) lo = mid;
+      else hi = mid;
+    }
+    return hi;
+  }
+
+  return { frameAtTime, timeAtFrame };
 }
+
+export type ZoomRamp = { start: number; end: number; fromH: number; toH: number };
 
 /*
  * "Push-in" aplicado pelo scripts/prepare-sequence.py nos frames 148–162 para
@@ -179,14 +190,39 @@ export function timeAtFrame(frame: number): number {
  * vídeo original e as bordas se dissolvem no fundo do palco.
  * Mantenha estes valores iguais aos do script.
  */
-export const ZOOM_RAMP = { start: 148, end: 162, fromH: 720, toH: 530 };
+export const ZOOM_RAMP: ZoomRamp = { start: 148, end: 162, fromH: 720, toH: 530 };
 
-export function bakedZoomCompensation(frame: number) {
-  const x = Math.min(1, Math.max(0, (frame - ZOOM_RAMP.start) / (ZOOM_RAMP.end - ZOOM_RAMP.start)));
+export function bakedZoomCompensation(ramp: ZoomRamp | null, frame: number) {
+  if (!ramp) return 1;
+  const x = Math.min(1, Math.max(0, (frame - ramp.start) / (ramp.end - ramp.start)));
   const t = x * x * (3 - 2 * x);
-  const h = ZOOM_RAMP.fromH + (ZOOM_RAMP.toH - ZOOM_RAMP.fromH) * t;
-  return h / ZOOM_RAMP.fromH;
+  const h = ramp.fromH + (ramp.toH - ramp.fromH) * t;
+  return h / ramp.fromH;
 }
+
+/**
+ * Tudo o que muda de um vídeo para outro. A home usa V1; variantes de teste
+ * (ex.: /index2) passam a sua para <ScrollEvolution variant={...} />.
+ */
+export type EvolutionVariant = {
+  sequences: Record<SequenceSource["id"], SequenceSource>;
+  pacing: [number, number][];
+  moments: Moment[];
+  /** null quando os frames não têm push-in (gerados com --no-push-in) */
+  zoomRamp: ZoomRamp | null;
+  /** Um still por momento, para prefers-reduced-motion */
+  stills: string[];
+  posterAlt: string;
+};
+
+export const V1: EvolutionVariant = {
+  sequences: SEQUENCES,
+  pacing: PACING,
+  moments: MOMENTS,
+  zoomRamp: ZOOM_RAMP,
+  stills: ["/sequence/stills/f24.webp", "/sequence/stills/f72.webp", "/sequence/stills/f140.webp", "/sequence/stills/f228.webp"],
+  posterAlt: "Primeiro iPhone em um estúdio branco minimalista",
+};
 
 /** Índice do conjunto carregado → frame original (0–239). */
 export const toOriginalFrame = (source: SequenceSource, index: number) =>

@@ -1,7 +1,7 @@
 "use client";
 
 import { gsap } from "./gsap";
-import { MOMENTS, VIDEO_END, ZOOM_RAMP, timeAtFrame } from "@/lib/sequence";
+import { VIDEO_END, type EvolutionVariant, type Pacing } from "@/lib/sequence";
 
 export type EvolutionTargets = {
   section: HTMLElement;
@@ -24,7 +24,12 @@ export type EvolutionTargets = {
  */
 export function createEvolutionTimeline(
   t: EvolutionTargets,
-  { scrub, onTime }: { scrub: number | boolean; onTime: (time: number) => void },
+  {
+    scrub,
+    onTime,
+    variant,
+    pacing,
+  }: { scrub: number | boolean; onTime: (time: number) => void; variant: EvolutionVariant; pacing: Pacing },
 ) {
   const tl = gsap.timeline({
     defaults: { ease: "none" },
@@ -46,7 +51,7 @@ export function createEvolutionTimeline(
   tl.to(t.hero, { autoAlpha: 0, y: -48, duration: 0.05, ease: "power1.in" }, 0.004);
 
   // Momentos narrativos
-  MOMENTS.forEach((m, i) => {
+  variant.moments.forEach((m, i) => {
     const el = t.moments[i];
     if (!el) return;
     const fade = Math.min(0.03, (m.end - m.start) / 4);
@@ -74,17 +79,18 @@ export function createEvolutionTimeline(
 
   // O dobrável chega com o quadro reduzido (compensação do push-in): o fundo do
   // palco clareia junto para as bordas do vídeo continuarem invisíveis.
-  tl.to(
+  const ramp = variant.zoomRamp;
+  if (ramp) tl.to(
     t.stage,
     {
       "--stage-top": "#d0d0d2",
       "--stage-mid": "#d9d9da",
       "--stage-bottom": "#d8d7d8",
       "--stage-glow": 0.32,
-      duration: timeAtFrame(ZOOM_RAMP.end) - timeAtFrame(ZOOM_RAMP.start),
+      duration: pacing.timeAtFrame(ramp.end) - pacing.timeAtFrame(ramp.start),
       ease: "sine.inOut",
     },
-    timeAtFrame(ZOOM_RAMP.start),
+    pacing.timeAtFrame(ramp.start),
   );
 
   // Final: leve aproximação + "abertura de luz" para a seção da marca

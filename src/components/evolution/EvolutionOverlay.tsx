@@ -1,6 +1,6 @@
 import type { Ref } from "react";
 import { ChevronDown } from "lucide-react";
-import { MOMENTS } from "@/lib/sequence";
+import type { Moment } from "@/lib/sequence";
 
 type Props = {
   heroRef: Ref<HTMLDivElement>;
@@ -10,13 +10,14 @@ type Props = {
   loaderRef: Ref<HTMLDivElement>;
   railStepRef: (i: number) => (el: HTMLElement | null) => void;
   momentRef: (i: number) => (el: HTMLElement | null) => void;
+  moments: Moment[];
 };
 
 /**
  * Camada tipográfica sobre o vídeo. Puramente estrutural: toda a
  * coreografia fica em animations/evolutionTimeline.ts.
  */
-export function EvolutionOverlay({ heroRef, hintRef, railRef, railFillRef, loaderRef, railStepRef, momentRef }: Props) {
+export function EvolutionOverlay({ heroRef, hintRef, railRef, railFillRef, loaderRef, railStepRef, momentRef, moments }: Props) {
   return (
     <div className="pointer-events-none absolute inset-0 z-10">
       {/* HERO */}
@@ -52,7 +53,7 @@ export function EvolutionOverlay({ heroRef, hintRef, railRef, railFillRef, loade
       </div>
 
       {/* MOMENTOS */}
-      {MOMENTS.map((m, i) => (
+      {moments.map((m, i) => (
         <article
           key={m.id}
           ref={momentRef(i)}
@@ -84,8 +85,8 @@ export function EvolutionOverlay({ heroRef, hintRef, railRef, railFillRef, loade
         aria-hidden
         className="invisible absolute inset-x-6 bottom-[max(1.75rem,env(safe-area-inset-bottom))] opacity-0 wide:inset-x-auto wide:left-1/2 wide:w-[min(58rem,74vw)] wide:-translate-x-1/2"
       >
-        <div className="hidden grid-cols-4 wide:grid">
-          {MOMENTS.map((m, i) => (
+        <div className="hidden wide:grid" style={{ gridTemplateColumns: `repeat(${moments.length}, minmax(0, 1fr))` }}>
+          {moments.map((m, i) => (
             <span
               key={m.id}
               ref={railStepRef(i)}

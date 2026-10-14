@@ -6,12 +6,13 @@ import { createEvolutionTimeline } from "@/animations/evolutionTimeline";
 import { FrameSequence } from "@/lib/frame-sequence";
 import {
   MOBILE_SEQUENCE_QUERY,
-  SEQUENCES,
+  V1,
   bakedZoomCompensation,
-  frameAtTime,
+  createPacing,
   frameUrl,
   toOriginalFrame,
   SOURCE_FRAME_COUNT,
+  type EvolutionVariant,
   type SequenceSource,
 } from "@/lib/sequence";
 import { useReducedMotion } from "@/hooks/useMediaQuery";
@@ -30,12 +31,13 @@ import { ReducedMotionEvolution } from "./ReducedMotionEvolution";
  * - O canvas só redesenha quando o frame muda; o desenho acontece no ticker
  *   do GSAP (requestAnimationFrame).
  */
-export function ScrollEvolution() {
+export function ScrollEvolution({ variant = V1 }: { variant?: EvolutionVariant }) {
   const reduced = useReducedMotion();
-  return reduced ? <ReducedMotionEvolution /> : <CinematicEvolution />;
+  return reduced ? <ReducedMotionEvolution variant={variant} /> : <CinematicEvolution variant={variant} />;
 }
 
-function CinematicEvolution() {
+function CinematicEvolution({ variant }: { variant: EvolutionVariant }) {
+  const { sequences } = variant;
   const sectionRef = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const scalerRef = useRef<HTMLDivElement>(null);
@@ -67,12 +69,13 @@ function CinematicEvolution() {
   useGSAP(
     () => {
       const mm = gsap.matchMedia();
+      const pacing = createPacing(variant.pacing);
 
       mm.add(
         { mobile: MOBILE_SEQUENCE_QUERY, desktop: `not all and ${MOBILE_SEQUENCE_QUERY}`, coarse: "(pointer: coarse)" },
         (ctx) => {
           const { mobile, coarse } = ctx.conditions as { mobile: boolean; coarse: boolean };
-          const source = mobile ? SEQUENCES.mobile : SEQUENCES.desktop;
+          const source = mobile ? sequences.mobile : sequences.desktop;
           return setupSequence(source, { scrub: coarse ? 0.5 : 0.8 });
         },
       );
@@ -120,7 +123,7 @@ function CinematicEvolution() {
           }
           drawnKey = key;
           // Compensação do push-in "assado" nos frames — no mesmo tick do desenho
-          const nextComp = bakedZoomCompensation(toOriginalFrame(source, b >= 0 ? a + alpha : a));
+          const nextComp = bakedZoomCompensation(variant.zoomRamp, toOriginalFrame(source, b >= 0 ? a + alpha : a));
           if (Math.abs(nextComp - comp) > 0.0005) {
             comp = nextComp;
             compEl.style.transform = comp < 0.9995 ? `scale(${comp.toFixed(4)})` : "";
@@ -173,7 +176,7 @@ function CinematicEvolution() {
         resize();
 
         const setTime = (time: number) => {
-          const next = (frameAtTime(time) / (SOURCE_FRAME_COUNT - 1)) * (source.count - 1);
+          const next = (pacing.frameAtTime(time) / (SOURCE_FRAME_COUNT - 1)) * (source.count - 1);
           if (Math.abs(next - pos) < 0.001) return;
           pos = next;
           const base = Math.floor(pos);
@@ -194,7 +197,7 @@ function CinematicEvolution() {
             railSteps: railStepEls.current,
             moments: momentEls.current,
           },
-          { scrub, onTime: setTime },
+          { scrub, onTime: setTime, variant, pacing },
         );
 
         seq.start().then(() => {
@@ -218,7 +221,7 @@ function CinematicEvolution() {
 
       return () => mm.revert();
     },
-    { scope: sectionRef },
+    { scope: sectionRef, dependencies: [variant] },
   );
 
   return (
@@ -234,10 +237,10 @@ function CinematicEvolution() {
           <div ref={frameRef} className="evolution-frame">
             {/* Poster = frame 0 do conjunto certo. Mesmo retângulo do canvas → sem salto. */}
             <picture>
-              <source media={MOBILE_SEQUENCE_QUERY} srcSet={frameUrl(SEQUENCES.mobile, 0)} width={640} height={720} />
+              <source media={MOBILE_SEQUENCE_QUERY} srcSet={frameUrl(sequences.mobile, 0)} width={640} height={720} />
               <img
-                src={frameUrl(SEQUENCES.desktop, 0)}
-                alt="Primeiro iPhone em um estúdio branco minimalista"
+                src={frameUrl(sequences.desktop, 0)}
+                alt={variant.posterAlt}
                 width={1280}
                 height={720}
                 fetchPriority="high"
@@ -262,6 +265,7 @@ function CinematicEvolution() {
           loaderRef={loaderRef}
           railStepRef={railStepRef}
           momentRef={momentRef}
+          moments={variant.moments}
         />
 
         {/* Luz final que se abre na seção da marca */}
