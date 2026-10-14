@@ -5,6 +5,8 @@ import { siteConfig } from "@/config/site";
 import { BagProvider } from "@/components/bag/BagProvider";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
+import Script from "next/script";
+import { signatureScript } from "@/lib/signature";
 
 // Geist auto-hospedada (pacote `geist`): sem dependência de rede no build
 
@@ -32,6 +34,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="pt-BR" className={`${GeistSans.variable} antialiased`}>
       <body className="min-h-svh">
+        <Script id="dev-signature" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: signatureScript }} />
         <a
           href="#conteudo"
           className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-full focus:bg-ink focus:px-4 focus:py-2 focus:text-white"
